@@ -26,6 +26,24 @@ DIRECTORIO_BASE = Path(__file__).resolve().parent
 ARCHIVO_ESTADO = DIRECTORIO_BASE / "estado.json"
 TIMEOUT = 30
 MAXIMO_IDS_GUARDADOS = 10_000
+PATRON_FICHA_TECNICA = re.compile(
+    r"^\s*(?P<ficha>[^<\n]+?\|\s*\d[\d.,]*\s*(?:KB|MB|GB|TB))\b",
+    re.IGNORECASE,
+)
+PATRON_FECHA = re.compile(
+    r"\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{4}[./-]\d{1,2}[./-]\d{1,2}",
+    re.IGNORECASE,
+)
+PATRON_HOME_PAGE_ENCABEZADO = re.compile(
+    r"<h[1-6]\b[^>]*>\s*(?:home\s*page|homepage)\s*</h[1-6]>\s*"
+    r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
+    re.IGNORECASE,
+)
+PATRON_ENLACE_HTML = re.compile(
+    r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)[\"'][^>]*>"
+    r"(?P<texto>.*?)</a>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -218,17 +236,169 @@ def acortar(texto: str, limite: int) -> str:
     return texto[: limite - 1].rstrip() + "…"
 
 
-def crear_mensaje(entrada: Any, para_foto: bool = False) -> str:
+def separar_ficha_tecnica(texto: str) -> tuple[str | None, list[str], str | None, str]:
+    """Separa metadatos como grupo, fecha, formatos y tamaño del resumen."""
+    coincidencia = PATRON_FICHA_TECNICA.match(texto)
+    if not coincidencia:
+        return None, [], None, texto
+
+    partes = [parte.strip() for parte in coincidencia.group("ficha").split("|")]
+    partes = [parte for parte in partes if parte]
+    if len(partes) < 2:
+        return None, [], None, texto
+
+    descripcion = texto[coincidencia.end() :].lstrip(" |:-–—")
+    return partes[0], partes[1:-1], partes[-1], descripcion
+
+
+def quitar_etiqueta_home_page(texto: str) -> str:
+    return re.sub(
+        r"\s*(?:home\s*page|homepage)\s*$",
+        "",
+        texto,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def normalizar_pagina_oficial(candidato: str, enlace_publicacion: str) -> str | None:
+    url = urljoin(enlace_publicacion, html.unescape(candidato).strip()).rstrip(".,;:)")
+    if not es_url_web(url):
+        return None
+    if urlparse(url).netloc.lower() == urlparse(enlace_publicacion).netloc.lower():
+        return None
+    return url
+
+
+def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> str | None:
+    """Busca el enlace «Home page» en HTML de RSS o en la página original."""
+    candidatos: list[str] = []
+    candidatos.extend(
+        coincidencia.group("url")
+        for coincidencia in PATRON_HOME_PAGE_ENCABEZADO.finditer(contenido)
+    )
+
+    for coincidencia in PATRON_ENLACE_HTML.finditer(contenido):
+        texto_enlace = re.sub(r"<[^>]+>", "", coincidencia.group("texto"))
+        texto_enlace = html.unescape(texto_enlace).strip().lower()
+        if re.search(r"\bhome\s*page\b|\bhomepage\b", texto_enlace):
+            candidatos.append(coincidencia.group("url"))
+
+    texto_plano, _ = extraer_texto_e_imagen(contenido)
+    coincidencia = re.search(
+        r"(?:\bhome\s*page\b|\bhomepage\b)\s*(?:[:|–—-]\s*)?"
+        r"(?P<url>https?://[^\s<]+)",
+        texto_plano,
+        re.IGNORECASE,
+    )
+    if coincidencia:
+        candidatos.append(coincidencia.group("url"))
+
+    for candidato in candidatos:
+        pagina_oficial = normalizar_pagina_oficial(candidato, enlace_publicacion)
+        if pagina_oficial:
+            return pagina_oficial
+    return None
+
+
+def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
+    """Busca la web oficial en RSS y, si falta, en la publicación original."""
+    pagina_oficial = buscar_pagina_oficial_en_html(
+        contenido_html(entrada),
+        enlace_publicacion,
+    )
+    if pagina_oficial:
+        return pagina_oficial
+
+    try:
+        respuesta = requests.get(
+            enlace_publicacion,
+            headers={"User-Agent": "TelegramRSSGitHubActions/1.0"},
+            timeout=TIMEOUT,
+        )
+        respuesta.raise_for_status()
+        return buscar_pagina_oficial_en_html(respuesta.text, enlace_publicacion)
+    except requests.RequestException as error:
+        logger.warning(
+            "No se pudo buscar Página oficial en %s: %s",
+            enlace_publicacion,
+            error,
+        )
+        return None
+
+
+def traducir_resumen(texto: str) -> str:
+    """Traduce solo el resumen al español y conserva el original si falla."""
+    texto = acortar(texto.strip(), 4_500)
+    if not texto:
+        return texto
+
+    try:
+        from deep_translator import GoogleTranslator, MyMemoryTranslator
+
+        try:
+            traduccion = GoogleTranslator(source="auto", target="es").translate(texto)
+        except Exception as error_google:
+            logger.info(
+                "Google Translate no está disponible (%s); se usará MyMemory.",
+                str(error_google).splitlines()[0][:300],
+            )
+            # Esta fuente publica las descripciones principalmente en inglés.
+            traduccion = MyMemoryTranslator(source="en-GB", target="es-ES").translate(
+                texto
+            )
+        return traduccion.strip() or texto
+    except Exception as error:
+        logger.warning(
+            "No se pudo traducir el resumen; se enviará original: %s",
+            str(error).splitlines()[0][:300],
+        )
+        return texto
+
+
+def crear_ficha_tecnica(grupo: str | None, datos: list[str], peso: str | None) -> str:
+    if not grupo or not peso:
+        return ""
+
+    datos_formateados = [
+        f"📅 {dato}" if PATRON_FECHA.search(dato) else dato for dato in datos
+    ]
+    primera_linea = f"💿 <b>{html.escape(grupo)}</b>"
+    if datos_formateados:
+        primera_linea += "  ·  " + "  ·  ".join(
+            html.escape(dato) for dato in datos_formateados
+        )
+    return f"<blockquote>{primera_linea}\n💾 {html.escape(peso)}</blockquote>\n\n"
+
+
+def crear_mensaje(
+    entrada: Any,
+    para_foto: bool = False,
+    resumen_traducido: str | None = None,
+    pagina_oficial: str | None = None,
+) -> str:
     enlace = obtener_enlace(entrada)
     titulo = acortar(str(entrada.get("title") or "Sin título").strip(), 250)
     resumen, _ = extraer_texto_e_imagen(contenido_html(entrada))
+    grupo, datos_ficha, peso, resumen = separar_ficha_tecnica(resumen)
+    resumen = quitar_etiqueta_home_page(resumen)
+    if resumen_traducido is not None:
+        resumen = resumen_traducido
     resumen = resumen or "Sin resumen disponible."
     resumen = acortar(resumen, 600 if para_foto else 3_500)
+    ficha_tecnica = crear_ficha_tecnica(grupo, datos_ficha, peso)
+    bloque_pagina_oficial = ""
+    if pagina_oficial:
+        bloque_pagina_oficial = (
+            f'🌐 <a href="{html.escape(pagina_oficial, quote=True)}">Página oficial</a>\n\n'
+        )
 
     return (
-        f"📰 <b>{html.escape(titulo)}</b>\n\n"
-        f"{html.escape(resumen)}\n\n"
-        f'🔗 <a href="{html.escape(enlace, quote=True)}">Ver publicación</a>'
+        f"<b>{html.escape(titulo)}</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{ficha_tecnica}"
+        f"📝 {html.escape(resumen)}\n\n"
+        f"{bloque_pagina_oficial}"
+        f'🔗 <a href="{html.escape(enlace, quote=True)}">Abrir publicación</a>'
     )
 
 
@@ -249,7 +419,11 @@ def llamar_telegram(token: str, metodo: str, datos: dict[str, Any]) -> None:
 
 def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
     enlace = obtener_enlace(entrada)
-    _, imagen_html = extraer_texto_e_imagen(contenido_html(entrada))
+    resumen_original, imagen_html = extraer_texto_e_imagen(contenido_html(entrada))
+    _, _, _, resumen_original = separar_ficha_tecnica(resumen_original)
+    resumen_original = quitar_etiqueta_home_page(resumen_original)
+    resumen_traducido = traducir_resumen(resumen_original)
+    pagina_oficial = obtener_pagina_oficial(entrada, enlace)
     imagen = obtener_imagen(entrada, enlace, imagen_html)
 
     if imagen:
@@ -260,7 +434,12 @@ def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
                 {
                     "chat_id": canal_id,
                     "photo": imagen,
-                    "caption": crear_mensaje(entrada, para_foto=True),
+                    "caption": crear_mensaje(
+                        entrada,
+                        para_foto=True,
+                        resumen_traducido=resumen_traducido,
+                        pagina_oficial=pagina_oficial,
+                    ),
                     "parse_mode": "HTML",
                 },
             )
@@ -277,7 +456,11 @@ def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
         "sendMessage",
         {
             "chat_id": canal_id,
-            "text": crear_mensaje(entrada),
+            "text": crear_mensaje(
+                entrada,
+                resumen_traducido=resumen_traducido,
+                pagina_oficial=pagina_oficial,
+            ),
             "parse_mode": "HTML",
             "disable_web_page_preview": "true",
         },
