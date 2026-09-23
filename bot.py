@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import sys
+import time
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -162,10 +163,16 @@ def obtener_enlace(entrada: Any) -> str:
 
 
 def obtener_entradas(rss_url: str) -> list[Any]:
-    """Descarga y procesa el RSS con timeout y errores HTTP explícitos."""
+    """Descarga y procesa el RSS evitando respuestas antiguas de caché."""
+    separador = "&" if "?" in rss_url else "?"
+    url_sin_cache = f"{rss_url}{separador}_={int(time.time())}"
     respuesta = requests.get(
-        rss_url,
-        headers={"User-Agent": "TelegramRSSGitHubActions/1.0"},
+        url_sin_cache,
+        headers={
+            "User-Agent": "TelegramRSSGitHubActions/1.0",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
         timeout=TIMEOUT,
     )
     respuesta.raise_for_status()
@@ -178,7 +185,9 @@ def obtener_entradas(rss_url: str) -> list[Any]:
             raise RuntimeError(f"No se pudo interpretar el RSS: {detalle}")
         logger.warning("El RSS contiene errores, pero se pudo leer: %s", detalle)
 
-    return [entrada for entrada in entradas if obtener_enlace(entrada)]
+    entradas_validas = [entrada for entrada in entradas if obtener_enlace(entrada)]
+    logger.info("RSS descargado: %d entrada(s).", len(entradas_validas))
+    return entradas_validas
 
 
 def obtener_id(entrada: Any) -> str:
@@ -519,6 +528,14 @@ def ejecutar() -> None:
     nuevas = publicaciones_nuevas(entradas, ids_enviados)
     if not nuevas:
         logger.info("RSS revisado: no hay publicaciones nuevas.")
+        for posicion, entrada in enumerate(entradas[:3], start=1):
+            logger.info(
+                "RSS #%d: %s | registrada=%s | %s",
+                posicion,
+                acortar(str(entrada.get("title") or "Sin título"), 120),
+                obtener_id(entrada) in ids_enviados,
+                obtener_enlace(entrada),
+            )
         return
 
     for entrada in nuevas:
