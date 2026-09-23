@@ -301,22 +301,43 @@ def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> st
 
 
 def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
-    """Busca la web oficial en RSS y, si falta, en la publicación original."""
+    """Busca la web oficial en RSS y luego en la publicación original."""
     pagina_oficial = buscar_pagina_oficial_en_html(
         contenido_html(entrada),
         enlace_publicacion,
     )
     if pagina_oficial:
+        logger.info("Página oficial encontrada en RSS: %s", pagina_oficial)
         return pagina_oficial
 
     try:
+        logger.info("Buscando Página oficial en: %s", enlace_publicacion)
         respuesta = requests.get(
             enlace_publicacion,
             headers={"User-Agent": "TelegramRSSGitHubActions/1.0"},
             timeout=TIMEOUT,
         )
         respuesta.raise_for_status()
-        return buscar_pagina_oficial_en_html(respuesta.text, enlace_publicacion)
+
+        logger.info(
+            "Página original descargada. HTTP %s, %s caracteres.",
+            respuesta.status_code,
+            len(respuesta.text),
+        )
+
+        pagina_oficial = buscar_pagina_oficial_en_html(
+            respuesta.text,
+            enlace_publicacion,
+        )
+        if pagina_oficial:
+            logger.info("Página oficial encontrada: %s", pagina_oficial)
+        else:
+            logger.warning(
+                "No se encontró el bloque 'Home page' en %s",
+                enlace_publicacion,
+            )
+
+        return pagina_oficial
     except requests.RequestException as error:
         logger.warning(
             "No se pudo buscar Página oficial en %s: %s",
