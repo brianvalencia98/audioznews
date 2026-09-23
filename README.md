@@ -2,7 +2,7 @@
 
 Este proyecto revisa una fuente RSS cada 10 minutos y publica en un canal de Telegram únicamente las entradas nuevas. No necesita un servidor encendido: GitHub Actions ejecuta el script, actualiza `estado.json` y guarda el cambio en el repositorio.
 
-El mensaje usa HTML e incluye título, resumen, enlace directo e imagen si el RSS la proporciona.
+El mensaje usa HTML e incluye título original, ficha técnica, resumen traducido automáticamente al español, página oficial cuando está indicada en la publicación original, enlace directo e imagen si el RSS la proporciona.
 
 ## Archivos principales
 
@@ -78,6 +78,9 @@ GitHub puede iniciar los trabajos programados con unos minutos de retraso en mom
 - Cada ID o enlace enviado queda en `estado.json`.
 - Si falla el RSS o Telegram, el error aparece en los logs del workflow y `estado.json` no se marca incorrectamente como enviado.
 - Si Telegram no puede descargar una imagen, el bot intenta enviar la misma publicación como texto.
+- El título, grupo, formatos, fecha y tamaño se mantienen originales; solo se traduce el resumen al español.
+- Si el RSS no contiene el enlace de «Home page», el bot revisa la publicación original para encontrarlo.
+- Si un servicio de traducción falla, el bot envía el resumen original y continúa.
 - El workflow necesita `contents: write`, ya configurado, para hacer commit y push de `estado.json` usando el `GITHUB_TOKEN` temporal de Actions.
 
 Si el paso **Guardar estado actualizado** muestra un error `403` al hacer `git push`, abre **Settings** > **Actions** > **General** y, en **Workflow permissions**, selecciona **Read and write permissions**. Después guarda el cambio y ejecuta el workflow de nuevo.
