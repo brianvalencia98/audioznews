@@ -27,6 +27,7 @@ DIRECTORIO_BASE = Path(__file__).resolve().parent
 ARCHIVO_ESTADO = DIRECTORIO_BASE / "estado.json"
 TIMEOUT = 30
 MAXIMO_IDS_GUARDADOS = 10_000
+URL_JINA_READER = "https://r.jina.ai/http://"
 CABECERAS_NAVEGADOR = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -53,6 +54,11 @@ PATRON_HOME_PAGE_ENLACE_CERCANO = re.compile(
     r"(?:home(?:\s|&nbsp;)*page|homepage)"
     r"(?:(?!<a\b).){0,1500}?"
     r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
+    re.IGNORECASE | re.DOTALL,
+)
+PATRON_HOME_PAGE_MARKDOWN = re.compile(
+    r"(?:home(?:\s|&nbsp;)*page|homepage)"
+    r".{0,600}?\]\((?P<url>https?://[^\s)]+)\)",
     re.IGNORECASE | re.DOTALL,
 )
 PATRON_ENLACE_HTML = re.compile(
@@ -327,6 +333,10 @@ def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> st
         coincidencia.group("url")
         for coincidencia in PATRON_HOME_PAGE_ENLACE_CERCANO.finditer(contenido)
     )
+    candidatos.extend(
+        coincidencia.group("url")
+        for coincidencia in PATRON_HOME_PAGE_MARKDOWN.finditer(contenido)
+    )
 
     for coincidencia in PATRON_ENLACE_HTML.finditer(contenido):
         texto_enlace = re.sub(r"<[^>]+>", "", coincidencia.group("texto"))
@@ -349,6 +359,43 @@ def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> st
         if pagina_oficial:
             return pagina_oficial
     return None
+
+
+def obtener_pagina_desde_respaldo(enlace_publicacion: str) -> str | None:
+    """Consulta Jina Reader solo cuando AudioZ no permite la lectura directa."""
+    destino = re.sub(r"^https?://", "", enlace_publicacion, flags=re.IGNORECASE)
+    url_respaldo = URL_JINA_READER + destino
+
+    try:
+        respuesta = requests.get(
+            url_respaldo,
+            headers={**CABECERAS_NAVEGADOR, "Accept": "text/plain"},
+            timeout=TIMEOUT,
+        )
+        respuesta.raise_for_status()
+        logger.info(
+            "Página original leída mediante respaldo (%s caracteres).",
+            len(respuesta.text),
+        )
+        pagina_oficial = buscar_pagina_oficial_en_html(
+            respuesta.text,
+            enlace_publicacion,
+        )
+        if pagina_oficial:
+            logger.info("Página oficial encontrada mediante respaldo: %s", pagina_oficial)
+        else:
+            logger.warning(
+                "El respaldo no encontró el bloque 'Home page' en %s",
+                enlace_publicacion,
+            )
+        return pagina_oficial
+    except requests.RequestException as error:
+        logger.warning(
+            "No se pudo usar el respaldo para %s: %s",
+            enlace_publicacion,
+            error,
+        )
+        return None
 
 
 def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
@@ -382,20 +429,17 @@ def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
         )
         if pagina_oficial:
             logger.info("Página oficial encontrada: %s", pagina_oficial)
-        else:
-            logger.warning(
-                "No se encontró el bloque 'Home page' en %s",
-                enlace_publicacion,
-            )
+            return pagina_oficial
 
-        return pagina_oficial
+        logger.warning("No se encontró el bloque 'Home page' en %s", enlace_publicacion)
+        return obtener_pagina_desde_respaldo(enlace_publicacion)
     except requests.RequestException as error:
         logger.warning(
             "No se pudo buscar Página oficial en %s: %s",
             enlace_publicacion,
             error,
         )
-        return None
+        return obtener_pagina_desde_respaldo(enlace_publicacion)
 
 
 def traducir_resumen(texto: str) -> str:
