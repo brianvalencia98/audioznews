@@ -226,9 +226,18 @@ def obtener_id(entrada: Any) -> str:
 
 
 def es_solicitud_req(entrada: Any) -> bool:
-    """Devuelve True para solicitudes del tipo «REQ: Producto» de AudioZ."""
+    """Devuelve True para solicitudes REQ: o de la categoría «requests»."""
     titulo = str(entrada.get("title") or "")
-    return bool(PATRON_SOLICITUD_REQ.match(titulo))
+    if PATRON_SOLICITUD_REQ.match(titulo):
+        return True
+
+    categorias = [str(entrada.get("category") or "")]
+    for etiqueta in entrada.get("tags") or []:
+        categorias.append(
+            str(etiqueta.get("term") or etiqueta.get("label") or "")
+        )
+
+    return any(categoria.strip().lower() == "requests" for categoria in categorias)
 
 
 def contenido_html(entrada: Any) -> str:
@@ -569,7 +578,7 @@ def ejecutar() -> None:
     if solicitudes:
         estado["ignored_ids"].extend(obtener_id(entrada) for entrada in solicitudes)
         guardar_estado(estado)
-        logger.info("Se omitieron %d solicitud(es) con prefijo REQ:.", len(solicitudes))
+        logger.info("Se omitieron %d solicitud(es) REQ/requests.", len(solicitudes))
         ids_conocidos.update(obtener_id(entrada) for entrada in solicitudes)
 
     nuevas = publicaciones_nuevas(entradas, ids_conocidos)
