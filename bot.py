@@ -60,6 +60,7 @@ PATRON_ENLACE_HTML = re.compile(
     r"(?P<texto>.*?)</a>",
     re.IGNORECASE | re.DOTALL,
 )
+PATRON_SOLICITUD_REQ = re.compile(r"^\s*REQ\s*[:\-]", re.IGNORECASE)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -104,7 +105,7 @@ class ExtractorContenido(HTMLParser):
 
 
 def estado_vacio() -> dict[str, Any]:
-    return {"initialized": False, "sent_ids": []}
+    return {"initialized": False, "sent_ids": [], "ignored_ids": []}
 
 
 def cargar_estado() -> dict[str, Any]:
@@ -122,12 +123,16 @@ def cargar_estado() -> dict[str, Any]:
         ids = contenido.get("sent_ids", contenido.get("ids_enviados", []))
         if not isinstance(ids, list):
             raise ValueError("sent_ids debe ser una lista")
+        ignorados = contenido.get("ignored_ids", [])
+        if not isinstance(ignorados, list):
+            raise ValueError("ignored_ids debe ser una lista")
 
         return {
             "initialized": bool(
                 contenido.get("initialized", contenido.get("inicializado", False))
             ),
             "sent_ids": [str(valor) for valor in ids if str(valor).strip()],
+            "ignored_ids": [str(valor) for valor in ignorados if str(valor).strip()],
         }
     except (OSError, json.JSONDecodeError, ValueError) as error:
         raise RuntimeError(
@@ -138,7 +143,10 @@ def cargar_estado() -> dict[str, Any]:
 def guardar_estado(estado: dict[str, Any]) -> None:
     """Guarda el estado atómicamente para no corromperlo ante un corte."""
     ids = list(dict.fromkeys(estado["sent_ids"]))[-MAXIMO_IDS_GUARDADOS:]
-    contenido = {"initialized": True, "sent_ids": ids}
+    ignorados = list(dict.fromkeys(estado.get("ignored_ids", [])))[
+        -MAXIMO_IDS_GUARDADOS:
+    ]
+    contenido = {"initialized": True, "sent_ids": ids, "ignored_ids": ignorados}
     temporal = ARCHIVO_ESTADO.with_suffix(".json.tmp")
 
     try:
@@ -215,6 +223,12 @@ def obtener_id(entrada: Any) -> str:
         for campo in ("title", "published", "updated", "summary")
     )
     return "sha256:" + hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def es_solicitud_req(entrada: Any) -> bool:
+    """Devuelve True para solicitudes del tipo «REQ: Producto» de AudioZ."""
+    titulo = str(entrada.get("title") or "")
+    return bool(PATRON_SOLICITUD_REQ.match(titulo))
 
 
 def contenido_html(entrada: Any) -> str:
@@ -544,7 +558,21 @@ def ejecutar() -> None:
         return
 
     ids_enviados = set(estado["sent_ids"])
-    nuevas = publicaciones_nuevas(entradas, ids_enviados)
+    ids_ignorados = set(estado.get("ignored_ids", []))
+    ids_conocidos = ids_enviados | ids_ignorados
+
+    solicitudes = [
+        entrada
+        for entrada in entradas
+        if es_solicitud_req(entrada) and obtener_id(entrada) not in ids_conocidos
+    ]
+    if solicitudes:
+        estado["ignored_ids"].extend(obtener_id(entrada) for entrada in solicitudes)
+        guardar_estado(estado)
+        logger.info("Se omitieron %d solicitud(es) con prefijo REQ:.", len(solicitudes))
+        ids_conocidos.update(obtener_id(entrada) for entrada in solicitudes)
+
+    nuevas = publicaciones_nuevas(entradas, ids_conocidos)
     if not nuevas:
         logger.info("RSS revisado: no hay publicaciones nuevas.")
         for posicion, entrada in enumerate(entradas[:3], start=1):
@@ -552,7 +580,7 @@ def ejecutar() -> None:
                 "RSS #%d: %s | registrada=%s | %s",
                 posicion,
                 acortar(str(entrada.get("title") or "Sin título"), 120),
-                obtener_id(entrada) in ids_enviados,
+                obtener_id(entrada) in ids_conocidos,
                 obtener_enlace(entrada),
             )
         return
