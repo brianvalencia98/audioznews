@@ -79,7 +79,7 @@ GitHub puede iniciar los trabajos programados con unos minutos de retraso en mom
 - Si falla el RSS o Telegram, el error aparece en los logs del workflow y `estado.json` no se marca incorrectamente como enviado.
 - Si Telegram no puede descargar una imagen, el bot intenta enviar la misma publicación como texto.
 - El título, grupo, formatos, fecha y tamaño se mantienen originales; solo se traduce el resumen al español.
-- Si el RSS no contiene el enlace de «Home page», el bot revisa la publicación original para encontrarlo.
+- Si el RSS no contiene el enlace de «Home page», el bot revisa la publicación original para encontrarlo. Si AudioZ bloquea esa consulta desde GitHub Actions, usa como respaldo Jina Reader para leer esa página pública; si ambos métodos fallan, el mensaje se publica sin ese enlace.
 - Si un servicio de traducción falla, el bot envía el resumen original y continúa.
 - El workflow necesita `contents: write`, ya configurado, para hacer commit y push de `estado.json` usando el `GITHUB_TOKEN` temporal de Actions.
 
