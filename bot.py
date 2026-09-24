@@ -27,6 +27,15 @@ DIRECTORIO_BASE = Path(__file__).resolve().parent
 ARCHIVO_ESTADO = DIRECTORIO_BASE / "estado.json"
 TIMEOUT = 30
 MAXIMO_IDS_GUARDADOS = 10_000
+CABECERAS_NAVEGADOR = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 PATRON_FICHA_TECNICA = re.compile(
     r"^\s*(?P<ficha>[^<\n]+?\|\s*\d[\d.,]*\s*(?:KB|MB|GB|TB))\b",
     re.IGNORECASE,
@@ -39,6 +48,12 @@ PATRON_HOME_PAGE_ENCABEZADO = re.compile(
     r"<h[1-6]\b[^>]*>\s*(?:home\s*page|homepage)\s*</h[1-6]>\s*"
     r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
     re.IGNORECASE,
+)
+PATRON_HOME_PAGE_ENLACE_CERCANO = re.compile(
+    r"(?:home(?:\s|&nbsp;)*page|homepage)"
+    r"(?:(?!<a\b).){0,1500}?"
+    r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
+    re.IGNORECASE | re.DOTALL,
 )
 PATRON_ENLACE_HTML = re.compile(
     r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)[\"'][^>]*>"
@@ -169,7 +184,7 @@ def obtener_entradas(rss_url: str) -> list[Any]:
     respuesta = requests.get(
         url_sin_cache,
         headers={
-            "User-Agent": "TelegramRSSGitHubActions/1.0",
+            **CABECERAS_NAVEGADOR,
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         },
@@ -285,6 +300,10 @@ def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> st
         coincidencia.group("url")
         for coincidencia in PATRON_HOME_PAGE_ENCABEZADO.finditer(contenido)
     )
+    candidatos.extend(
+        coincidencia.group("url")
+        for coincidencia in PATRON_HOME_PAGE_ENLACE_CERCANO.finditer(contenido)
+    )
 
     for coincidencia in PATRON_ENLACE_HTML.finditer(contenido):
         texto_enlace = re.sub(r"<[^>]+>", "", coincidencia.group("texto"))
@@ -323,7 +342,7 @@ def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
         logger.info("Buscando Página oficial en: %s", enlace_publicacion)
         respuesta = requests.get(
             enlace_publicacion,
-            headers={"User-Agent": "TelegramRSSGitHubActions/1.0"},
+            headers=CABECERAS_NAVEGADOR,
             timeout=TIMEOUT,
         )
         respuesta.raise_for_status()
