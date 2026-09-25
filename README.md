@@ -2,7 +2,7 @@
 
 Este proyecto revisa una fuente RSS cada 10 minutos y publica en un canal de Telegram únicamente las entradas nuevas. No necesita un servidor encendido: GitHub Actions ejecuta el script, actualiza `estado.json` y guarda el cambio en el repositorio.
 
-El mensaje usa HTML e incluye título original, ficha técnica, resumen traducido automáticamente al español, página oficial cuando está indicada en la publicación original, enlace directo e imagen si el RSS la proporciona.
+El mensaje usa HTML e incluye título original, ficha técnica, resumen traducido automáticamente al español, página oficial cuando está indicada en la publicación original, enlace de descarga cuando AudioZ lo expone, enlace directo e imagen si el RSS la proporciona.
 
 ## Archivos principales
 
