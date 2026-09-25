@@ -73,6 +73,25 @@
     "https://audioz.download/request/301565-download_req-ni-maschine-expansion-paris-heat.html",
     "https://audioz.download/request/301568-req-odeholm-audio-slam-amp.html",
     "https://audioz.download/samples/kontakt/301584-download_keepforest-devastator-cyberpunk-kontakt.html",
-    "https://audioz.download/request/301571-download_req-triumph-audio-ghost-koil-for-kontakt.html"
+    "https://audioz.download/request/301571-download_req-triumph-audio-ghost-koil-for-kontakt.html",
+    "https://audioz.download/samples/loop/300675-download_renraku-sugar-rnb-and-soul-tapes-wav-fantastic.html"
+  ],
+  "ignored_ids": [
+    "https://audioz.download/request/301622-req-fm-alive-xy-manager.html",
+    "https://audioz.download/request/301621-ample-sound-ample-china-xun.html",
+    "https://audioz.download/request/301617-download_req-soundsphat-cassiopeia-kontakt-full-version.html",
+    "https://audioz.download/request/301614-req-mixed-in-key-captain-plugins-epic-74-for-windows.html",
+    "https://audioz.download/request/301608-req-native-instruments-maschine-37.html",
+    "https://audioz.download/request/301607-req-walden-by-dana-collyd.html",
+    "https://audioz.download/request/301605-req-ample-sound-ample-china-41-windowsmacos.html",
+    "https://audioz.download/request/301600-req-hze-pedal-lab.html",
+    "https://audioz.download/request/301587-req-sonicspore-sounds-secret-lab-v1-serum-2-sound-effects-psytrance.html",
+    "https://audioz.download/request/301582-req-hivetune-aeroverb-vst3-au.html",
+    "https://audioz.download/request/301581-download_sonescent-all-plugins-20260924.html",
+    "https://audioz.download/request/301579-req-cinetools-horror-intros-halloween-wav.html",
+    "https://audioz.download/request/301578-req-xlntsound-drops-only-color-bass-vol02.html",
+    "https://audioz.download/request/301577-req-school-of-song-workshop-with-daniel-lopatin-oneohtrix-point-never.html",
+    "https://audioz.download/request/301575-download_req-analog-legends-legend-channel-win.html",
+    "https://audioz.download/request/301572-req-neural-dsp-archetype-plini-x-macos-version.html"
   ]
 }
