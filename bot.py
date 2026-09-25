@@ -61,6 +61,22 @@ PATRON_HOME_PAGE_MARKDOWN = re.compile(
     r".{0,600}?\]\((?P<url>https?://[^\s)]+)\)",
     re.IGNORECASE | re.DOTALL,
 )
+PATRON_DESCARGA_ENCABEZADO = re.compile(
+    r"<h[1-6]\b[^>]*>\s*download\s+from\s+free\s+file\s+storage\s*"
+    r"</h[1-6]>\s*<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
+    re.IGNORECASE,
+)
+PATRON_DESCARGA_ENLACE_CERCANO = re.compile(
+    r"download\s+from\s+free\s+file\s+storage"
+    r"(?:(?!<a\b).){0,1500}?"
+    r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)",
+    re.IGNORECASE | re.DOTALL,
+)
+PATRON_DESCARGA_MARKDOWN = re.compile(
+    r"download\s+from\s+free\s+file\s+storage"
+    r".{0,600}?\]\((?P<url>https?://[^\s)]+)\)",
+    re.IGNORECASE | re.DOTALL,
+)
 PATRON_ENLACE_HTML = re.compile(
     r"<a\b[^>]*\bhref\s*=\s*[\"'](?P<url>[^\"']+)[\"'][^>]*>"
     r"(?P<texto>.*?)</a>",
@@ -361,7 +377,39 @@ def buscar_pagina_oficial_en_html(contenido: str, enlace_publicacion: str) -> st
     return None
 
 
-def obtener_pagina_desde_respaldo(enlace_publicacion: str) -> str | None:
+def buscar_enlace_descarga_en_html(
+    contenido: str,
+    enlace_publicacion: str,
+) -> str | None:
+    """Extrae el primer enlace del bloque «download from free file storage»."""
+    candidatos: list[str] = []
+    for patron in (
+        PATRON_DESCARGA_ENCABEZADO,
+        PATRON_DESCARGA_ENLACE_CERCANO,
+        PATRON_DESCARGA_MARKDOWN,
+    ):
+        candidatos.extend(coincidencia.group("url") for coincidencia in patron.finditer(contenido))
+
+    for candidato in candidatos:
+        enlace_descarga = normalizar_pagina_oficial(candidato, enlace_publicacion)
+        if enlace_descarga:
+            return enlace_descarga
+    return None
+
+
+def extraer_enlaces_adicionales(
+    contenido: str,
+    enlace_publicacion: str,
+) -> tuple[str | None, str | None]:
+    return (
+        buscar_pagina_oficial_en_html(contenido, enlace_publicacion),
+        buscar_enlace_descarga_en_html(contenido, enlace_publicacion),
+    )
+
+
+def obtener_enlaces_desde_respaldo(
+    enlace_publicacion: str,
+) -> tuple[str | None, str | None]:
     """Consulta Jina Reader solo cuando AudioZ no permite la lectura directa."""
     destino = re.sub(r"^https?://", "", enlace_publicacion, flags=re.IGNORECASE)
     url_respaldo = URL_JINA_READER + destino
@@ -377,39 +425,42 @@ def obtener_pagina_desde_respaldo(enlace_publicacion: str) -> str | None:
             "Página original leída mediante respaldo (%s caracteres).",
             len(respuesta.text),
         )
-        pagina_oficial = buscar_pagina_oficial_en_html(
+        pagina_oficial, enlace_descarga = extraer_enlaces_adicionales(
             respuesta.text,
             enlace_publicacion,
         )
         if pagina_oficial:
             logger.info("Página oficial encontrada mediante respaldo: %s", pagina_oficial)
-        else:
-            logger.warning(
-                "El respaldo no encontró el bloque 'Home page' en %s",
-                enlace_publicacion,
-            )
-        return pagina_oficial
+        if enlace_descarga:
+            logger.info("Enlace de descarga encontrado mediante respaldo.")
+        return pagina_oficial, enlace_descarga
     except requests.RequestException as error:
         logger.warning(
             "No se pudo usar el respaldo para %s: %s",
             enlace_publicacion,
             error,
         )
-        return None
+        return None, None
 
 
-def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
-    """Busca la web oficial en RSS y luego en la publicación original."""
-    pagina_oficial = buscar_pagina_oficial_en_html(
+def obtener_enlaces_adicionales(
+    entrada: Any,
+    enlace_publicacion: str,
+) -> tuple[str | None, str | None]:
+    """Busca la web oficial y el enlace de descarga en RSS y publicación original."""
+    pagina_oficial, enlace_descarga = extraer_enlaces_adicionales(
         contenido_html(entrada),
         enlace_publicacion,
     )
     if pagina_oficial:
         logger.info("Página oficial encontrada en RSS: %s", pagina_oficial)
-        return pagina_oficial
+    if enlace_descarga:
+        logger.info("Enlace de descarga encontrado en RSS.")
+    if pagina_oficial and enlace_descarga:
+        return pagina_oficial, enlace_descarga
 
     try:
-        logger.info("Buscando Página oficial en: %s", enlace_publicacion)
+        logger.info("Buscando enlaces adicionales en: %s", enlace_publicacion)
         respuesta = requests.get(
             enlace_publicacion,
             headers=CABECERAS_NAVEGADOR,
@@ -423,23 +474,29 @@ def obtener_pagina_oficial(entrada: Any, enlace_publicacion: str) -> str | None:
             len(respuesta.text),
         )
 
-        pagina_oficial = buscar_pagina_oficial_en_html(
+        pagina_directa, descarga_directa = extraer_enlaces_adicionales(
             respuesta.text,
             enlace_publicacion,
         )
-        if pagina_oficial:
-            logger.info("Página oficial encontrada: %s", pagina_oficial)
-            return pagina_oficial
-
-        logger.warning("No se encontró el bloque 'Home page' en %s", enlace_publicacion)
-        return obtener_pagina_desde_respaldo(enlace_publicacion)
+        pagina_oficial = pagina_oficial or pagina_directa
+        enlace_descarga = enlace_descarga or descarga_directa
+        if pagina_directa:
+            logger.info("Página oficial encontrada: %s", pagina_directa)
+        if descarga_directa:
+            logger.info("Enlace de descarga encontrado.")
+        if pagina_oficial and enlace_descarga:
+            return pagina_oficial, enlace_descarga
     except requests.RequestException as error:
         logger.warning(
-            "No se pudo buscar Página oficial en %s: %s",
+            "No se pudieron buscar enlaces adicionales en %s: %s",
             enlace_publicacion,
             error,
         )
-        return obtener_pagina_desde_respaldo(enlace_publicacion)
+
+    pagina_respaldo, descarga_respaldo = obtener_enlaces_desde_respaldo(
+        enlace_publicacion
+    )
+    return pagina_oficial or pagina_respaldo, enlace_descarga or descarga_respaldo
 
 
 def traducir_resumen(texto: str) -> str:
@@ -491,6 +548,7 @@ def crear_mensaje(
     para_foto: bool = False,
     resumen_traducido: str | None = None,
     pagina_oficial: str | None = None,
+    enlace_descarga: str | None = None,
 ) -> str:
     enlace = obtener_enlace(entrada)
     titulo = acortar(str(entrada.get("title") or "Sin título").strip(), 250)
@@ -507,6 +565,11 @@ def crear_mensaje(
         bloque_pagina_oficial = (
             f'🌐 <a href="{html.escape(pagina_oficial, quote=True)}">Página oficial</a>\n\n'
         )
+    bloque_descarga = ""
+    if enlace_descarga:
+        bloque_descarga = (
+            f'📥 <a href="{html.escape(enlace_descarga, quote=True)}">Descargar archivo</a>\n\n'
+        )
 
     return (
         f"<b>{html.escape(titulo)}</b>\n"
@@ -514,6 +577,7 @@ def crear_mensaje(
         f"{ficha_tecnica}"
         f"📝 {html.escape(resumen)}\n\n"
         f"{bloque_pagina_oficial}"
+        f"{bloque_descarga}"
         f'🔗 <a href="{html.escape(enlace, quote=True)}">Abrir publicación</a>'
     )
 
@@ -539,7 +603,7 @@ def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
     _, _, _, resumen_original = separar_ficha_tecnica(resumen_original)
     resumen_original = quitar_etiqueta_home_page(resumen_original)
     resumen_traducido = traducir_resumen(resumen_original)
-    pagina_oficial = obtener_pagina_oficial(entrada, enlace)
+    pagina_oficial, enlace_descarga = obtener_enlaces_adicionales(entrada, enlace)
     imagen = obtener_imagen(entrada, enlace, imagen_html)
 
     if imagen:
@@ -555,6 +619,7 @@ def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
                         para_foto=True,
                         resumen_traducido=resumen_traducido,
                         pagina_oficial=pagina_oficial,
+                        enlace_descarga=enlace_descarga,
                     ),
                     "parse_mode": "HTML",
                 },
@@ -576,6 +641,7 @@ def enviar_publicacion(token: str, canal_id: str, entrada: Any) -> None:
                 entrada,
                 resumen_traducido=resumen_traducido,
                 pagina_oficial=pagina_oficial,
+                enlace_descarga=enlace_descarga,
             ),
             "parse_mode": "HTML",
             "disable_web_page_preview": "true",
