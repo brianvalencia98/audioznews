@@ -2252,7 +2252,19 @@
     "https://audioz.download/samples/304755-download_shadow-samples-uk-garage-the-complete-bundle-multiformat.html",
     "https://audioz.download/samples/presets/305130-download_evosounds-deceiver-diva-iii.html",
     "https://audioz.download/software/305135-download_izotope-rx-12-advanced-v1211-u2b-macos.html",
-    "https://audioz.download/tutorials/books/305140-download_oxford-studies-in-music-theory-tonality-an-owners-manual.html"
+    "https://audioz.download/tutorials/books/305140-download_oxford-studies-in-music-theory-tonality-an-owners-manual.html",
+    "https://audioz.download/samples/presets/305141-download_xfer-serum-2-skins-v15-by-colove-products-arcadia.html",
+    "https://audioz.download/samples/305144-download_soundora-senit-summer-house-bundle-wav-midi-serum-2-presets-fl-studio-and-logic-project-files-arcadia.html",
+    "https://audioz.download/samples/305046-download_john-travis-splash-sum-drum-kit-wav.html",
+    "https://audioz.download/samples/presets/305149-download_samples-from-mars-serum-2-analog-808s-from-mars.html",
+    "https://audioz.download/samples/presets/305150-download_samples-from-mars-serum-2-analog-techno-from-mars.html",
+    "https://audioz.download/samples/presets/305151-download_samples-from-mars-serum-2-vintage-synths.html",
+    "https://audioz.download/samples/presets/305153-download_samples-from-mars-serum-2-vintage-synths-vol-ii-from-mars.html",
+    "https://audioz.download/samples/presets/305155-download_samples-from-mars-serum-2-wurli-from-mars.html",
+    "https://audioz.download/software/305156-download_izotope-fxeq-v110-u2b-macos.html",
+    "https://audioz.download/samples/presets/305157-download_samples-from-mars-serum-2-voices-from-mars.html",
+    "https://audioz.download/software/win/305160-download_coolutils-total-audio-converter-v610335-multilingual.html",
+    "https://audioz.download/software/win/305162-download_helium-music-manager-182885-premium-multilingual.html"
   ],
   "ignored_ids": [
     "https://audioz.download/request/301622-req-fm-alive-xy-manager.html",
@@ -2976,6 +2988,12 @@
     "https://audioz.download/request/305022-req-cherry-audio-dw-8000.html",
     "https://audioz.download/request/305016-req-logic-pro-v124.html",
     "https://audioz.download/request/305009-req-musiclab-realguitar-6-macos.html",
-    "https://audioz.download/request/305025-download_req-dw-8k-by-cherry-audio-win.html"
+    "https://audioz.download/request/305025-download_req-dw-8k-by-cherry-audio-win.html",
+    "https://audioz.download/request/305063-req-reorder-audio-revision-2.html",
+    "https://audioz.download/request/305057-req-roger-linn-design-adrenalinn-sync-v203-macos-u2b-arm64-x64-port.html",
+    "https://audioz.download/request/305055-req-kabayun-academy-complete-collection.html",
+    "https://audioz.download/request/305054-req-noise-dept-collider-vst3-au-aax.html",
+    "https://audioz.download/request/305050-req-sonic-weaponry-serum-2-supply-drop-complete-bundle.html",
+    "https://audioz.download/request/305032-req-cherry-audio-synth-stack-7.html"
   ]
 }
